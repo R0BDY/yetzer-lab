@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Yetzer Lab</title>
   <meta name="description" content="Yetzer Lab: un taller para expresar, sonar, compartir, jugar y forjar.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Yetzer Lab">
+  <meta property="og:title" content="Yetzer Lab">
+  <meta property="og:description" content="Un taller para expresar, sonar, compartir, jugar y forjar.">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23ffc9a3'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='Georgia,serif' font-weight='700' font-size='20' fill='%231a1206'%3EY%3C/text%3E%3C/svg%3E">
   <meta name="color-scheme" content="dark light">
   <script>
     // Aplica el tema guardado antes de pintar, para evitar parpadeo.
@@ -269,6 +275,13 @@
       background: #000; border: 1px solid var(--border); border-radius: var(--radius);
     }
     .game-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    /* Aviso "Cargando…": el escenario es negro en ambos temas, por eso el color es fijo. */
+    .game-loading {
+      position: absolute; inset: 0; margin: 0;
+      display: grid; place-items: center;
+      color: #e8ecf8; font-size: .95rem; letter-spacing: .04em;
+      pointer-events: none;
+    }
     .game-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-top: 14px; }
     .game-bar p { margin: 0; }
     .linklike { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
@@ -458,6 +471,7 @@
         </div>
         <div class="game-stage" id="game-stage">
           <button class="btn btn-primary" id="game-start" type="button" data-i18n="game.start">Jugar PAC-PLANETS</button>
+          <p class="game-loading" id="game-loading" role="status"></p>
         </div>
         <div class="game-bar">
           <a id="game-newtab" href="juegos/pacman/" target="_blank" rel="noopener" data-i18n="game.newTab" hidden>Abrir en pestaña nueva</a>
@@ -645,6 +659,7 @@
           "newTab": "Abrir en pestaña nueva",
           "stop": "Cerrar juego",
           "frame": "Juego PAC-PLANETS",
+          "loading": "Cargando el juego…",
           "missing": "El juego todavía no está disponible. Vuelve pronto."
         },
         "contact": {
@@ -731,6 +746,7 @@
           "newTab": "Open in a new tab",
           "stop": "Close game",
           "frame": "PAC-PLANETS game",
+          "loading": "Loading the game…",
           "missing": "The game isn't available yet. Check back soon."
         },
         "contact": {
@@ -1009,11 +1025,25 @@
     var gameMsg = document.getElementById('game-msg');
 
     var gameNewTab = document.getElementById('game-newtab');
+    var gameLoading = document.getElementById('game-loading');
     gameNewTab.href = CONFIG.gameUrl;
+
+    // Aviso "Cargando…" dentro del escenario mientras baja el juego (810 KB).
+    // Lleva data-i18n mientras está visible para traducirse con el idioma.
+    function setLoading(on) {
+      if (on) {
+        gameLoading.setAttribute('data-i18n', 'game.loading');
+        gameLoading.textContent = t('game.loading');
+      } else {
+        gameLoading.removeAttribute('data-i18n');
+        gameLoading.textContent = '';
+      }
+    }
 
     function stopGame() {
       var frame = gameStage.querySelector('iframe');
       if (frame) frame.remove();
+      setLoading(false);
       gameStart.hidden = false;
       gameStop.hidden = true;
       clearStatus(gameMsg);
@@ -1024,30 +1054,53 @@
       frame.src = CONFIG.gameUrl;
       frame.title = t('game.frame');
       frame.setAttribute('allow', 'fullscreen; autoplay; gamepad');
+      // Oculto hasta que termine de cargar: mientras tanto se ve el aviso.
+      frame.style.visibility = 'hidden';
+      setLoading(true);
       gameStage.appendChild(frame);
       gameStart.hidden = true;
       gameStop.hidden = false;
       gameNewTab.hidden = false;
       gameStage.scrollIntoView({ block: 'start' });
-      frame.addEventListener('load', function () { frame.focus(); });
+      frame.addEventListener('load', function () {
+        setLoading(false);
+        frame.style.visibility = '';
+        frame.focus();
+        // Si el foco sale del juego (clic fuera, cambio de ventana), se pausa:
+        // así el personaje no sigue solo y las teclas no mueven la página a ciegas.
+        try {
+          var win = frame.contentWindow;
+          win.addEventListener('blur', function () {
+            if (win.__pac && typeof win.__pac.pause === 'function') win.__pac.pause();
+          });
+        } catch (e) {}
+      });
     }
     function startGame() {
       clearStatus(gameMsg);
       // Abierto desde disco (file:) no se puede comprobar: se carga directo.
       if (location.protocol === 'file:') { mountGame(); return; }
-      gameStart.disabled = true;
+      // Respuesta inmediata al clic: el botón deja su lugar al aviso "Cargando…".
+      gameStart.hidden = true;
+      setLoading(true);
       fetch(CONFIG.gameUrl, { method: 'HEAD' })
         .then(function (res) {
           // Solo "no existe" cuenta como juego no disponible.
-          if (res.status === 404 || res.status === 410) setStatus(gameMsg, 'game.missing', 'warn');
-          else mountGame();
-        }, function () { mountGame(); })
-        .then(function () { gameStart.disabled = false; });
+          if (res.status === 404 || res.status === 410) {
+            stopGame();
+            setStatus(gameMsg, 'game.missing', 'warn');
+            gameStart.focus();
+          } else mountGame();
+        }, function () { mountGame(); });
     }
 
     /* ---------- Eventos ---------- */
     gameStart.addEventListener('click', startGame);
     gameStop.addEventListener('click', function () { stopGame(); gameStart.focus(); });
+    // Al abrir el juego en otra pestaña se cierra la copia de esta página: dos
+    // copias abiertas comparten el progreso guardado y una pisaría a la otra.
+    gameNewTab.addEventListener('click', stopGame);
+    gameNewTab.addEventListener('auxclick', function (e) { if (e.button === 1) stopGame(); });
     document.querySelectorAll('form[data-form]').forEach(wireForm);
     langBtn.addEventListener('click', function () { setLang(lang === 'es' ? 'en' : 'es'); });
     themeBtn.addEventListener('click', function () { setTheme(currentTheme() === 'dark' ? 'light' : 'dark'); });
