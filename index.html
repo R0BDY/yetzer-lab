@@ -1048,21 +1048,36 @@
       gameStop.hidden = true;
       clearStatus(gameMsg);
     }
-    function mountGame() {
+    // showNow: muestra el marco de inmediato y sin aviso. Se usa cuando ya se
+    // sabe que la red falló, para que se vea el error del propio navegador.
+    function mountGame(showNow) {
       if (currentView !== 'juega' || gameStage.querySelector('iframe')) return;
       var frame = document.createElement('iframe');
       frame.src = CONFIG.gameUrl;
       frame.title = t('game.frame');
       frame.setAttribute('allow', 'fullscreen; autoplay; gamepad');
-      // Oculto hasta que termine de cargar: mientras tanto se ve el aviso.
-      frame.style.visibility = 'hidden';
-      setLoading(true);
+      if (showNow) setLoading(false);
+      else {
+        // Oculto hasta que termine de cargar: mientras tanto se ve el aviso.
+        frame.style.visibility = 'hidden';
+        setLoading(true);
+      }
       gameStage.appendChild(frame);
       gameStart.hidden = true;
       gameStop.hidden = false;
       gameNewTab.hidden = false;
       gameStage.scrollIntoView({ block: 'start' });
+      // Respaldo: si la carga no termina en 30 s (algunos navegadores no avisan
+      // cuando falla), se muestra el marco de todos modos, para que se vea su
+      // estado en lugar de un "Cargando…" eterno. En una conexión lenta el
+      // aviso sigue visible hasta entonces.
+      var reveal = setTimeout(function () {
+        if (!frame.isConnected) return;
+        setLoading(false);
+        frame.style.visibility = '';
+      }, 30000);
       frame.addEventListener('load', function () {
+        clearTimeout(reveal);
         setLoading(false);
         frame.style.visibility = '';
         frame.focus();
@@ -1091,7 +1106,7 @@
             setStatus(gameMsg, 'game.missing', 'warn');
             gameStart.focus();
           } else mountGame();
-        }, function () { mountGame(); });
+        }, function () { mountGame(true); }); // sin red: se muestra el marco tal cual
     }
 
     /* ---------- Eventos ---------- */

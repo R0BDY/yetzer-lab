@@ -30,10 +30,12 @@
         var seg = parts[project ? 1 : 0] || '';
         try { seg = decodeURIComponent(seg); } catch (e) {}
         seg = seg.toLowerCase().replace(/\.html?$/, '');
-        if (Object.prototype.hasOwnProperty.call(ALIASES, seg)) seg = ALIASES[seg];
+        // Solo se redirige a destinos de las dos listas fijas de arriba: nada
+        // de lo que venga escrito en la dirección se usa para armar el destino.
+        var known = Object.prototype.hasOwnProperty.call(ALIASES, seg) ? ALIASES[seg] : seg;
         var target = null;
-        if (VIEWS.indexOf(seg) >= 0) target = base + '#' + seg;
-        else if (/\.html$/.test(seg) && base + seg !== pathname) target = base + seg;
+        if (VIEWS.indexOf(known) >= 0) target = base + '#' + known;
+        else if (known !== seg && base + known !== pathname) target = base + known;
         return { base: base, target: target };
       }
 
